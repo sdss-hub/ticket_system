@@ -12,6 +12,7 @@ namespace SupportTicketSystem.Core.Entities
         
         [Required]
         public string ConfigValue { get; set; } = string.Empty; 
+        public string? Description { get; set; }
         
         public int UpdatedById { get; set; }
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
