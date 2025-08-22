@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SupportTicketSystem.API.DTOs;
 using SupportTicketSystem.Core.Entities;
 using SupportTicketSystem.Core.Enums;
@@ -28,35 +29,67 @@ namespace SupportTicketSystem.API.Controllers
         {
             try
             {
-                IEnumerable<Ticket> tickets;
-
+                // Get tickets with all necessary includes
+                var query = _unitOfWork.Tickets.GetAllAsync();
+                var allTickets = await query;
+                
+                // Apply filters
+                var tickets = allTickets.AsQueryable();
+                
+                if (status.HasValue)
+                    tickets = tickets.Where(t => t.Status == status.Value);
+                
+                if (customerId.HasValue)
+                    tickets = tickets.Where(t => t.CustomerId == customerId.Value);
+                
+                if (agentId.HasValue)
+                    tickets = tickets.Where(t => t.AssignedAgentId == agentId.Value);
+                
                 if (!string.IsNullOrEmpty(search))
+                    tickets = tickets.Where(t => t.Title.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                               t.Description.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+                var result = new List<TicketResponseDto>();
+                
+                foreach (var ticket in tickets.Take(50)) // Limit to 50 for performance
                 {
-                    tickets = await _ticketService.SearchTicketsAsync(search);
-                }
-                else if (status.HasValue)
-                {
-                    tickets = await _unitOfWork.Tickets.GetTicketsByStatusAsync(status.Value);
-                }
-                else if (customerId.HasValue)
-                {
-                    tickets = await _unitOfWork.Tickets.GetTicketsByCustomerAsync(customerId.Value);
-                }
-                else if (agentId.HasValue)
-                {
-                    tickets = await _unitOfWork.Tickets.GetTicketsByAgentAsync(agentId.Value);
-                }
-                else
-                {
-                    tickets = await _unitOfWork.Tickets.GetAllAsync();
+                    // Load related entities manually if needed
+                    var customer = await _unitOfWork.Users.GetByIdAsync(ticket.CustomerId);
+                    var assignedAgent = ticket.AssignedAgentId.HasValue 
+                        ? await _unitOfWork.Users.GetByIdAsync(ticket.AssignedAgentId.Value) 
+                        : null;
+                    var category = ticket.CategoryId.HasValue 
+                        ? await _unitOfWork.Categories.GetByIdAsync(ticket.CategoryId.Value) 
+                        : null;
+
+                    var ticketDto = new TicketResponseDto
+                    {
+                        Id = ticket.Id,
+                        TicketNumber = ticket.TicketNumber,
+                        Title = ticket.Title,
+                        Description = ticket.Description,
+                        Priority = ticket.Priority,
+                        Status = ticket.Status,
+                        CreatedAt = ticket.CreatedAt,
+                        UpdatedAt = ticket.UpdatedAt,
+                        ResolvedAt = ticket.ResolvedAt,
+                        ClosedAt = ticket.ClosedAt,
+                        DueDate = ticket.DueDate,
+                        Customer = customer != null ? MapToUserDto(customer) : new UserDto { Id = ticket.CustomerId, FullName = "Unknown User" },
+                        AssignedAgent = assignedAgent != null ? MapToUserDto(assignedAgent) : null,
+                        Category = category != null ? MapToCategoryDto(category) : null,
+                        Comments = new List<CommentDto>(),
+                        Attachments = new List<AttachmentDto>()
+                    };
+                    
+                    result.Add(ticketDto);
                 }
 
-                var ticketDtos = tickets.Select(MapToTicketResponseDto).ToList();
-                return Ok(ticketDtos);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred while retrieving tickets", error = ex.Message });
+                return StatusCode(500, new { message = "An error occurred while retrieving tickets", error = ex.Message, stackTrace = ex.StackTrace });
             }
         }
 
@@ -113,107 +146,7 @@ namespace SupportTicketSystem.API.Controllers
             }
         }
 
-        [HttpPut("{id}/status")]
-        public async Task<ActionResult<TicketResponseDto>> UpdateTicketStatus(int id, [FromBody] TicketStatus status, [FromQuery] int userId = 1)
-        {
-            try
-            {
-                var updatedTicket = await _ticketService.UpdateTicketStatusAsync(id, status, userId);
-                var fullTicket = await _ticketService.GetTicketAsync(updatedTicket.Id);
-                
-                if (fullTicket == null)
-                {
-                    return StatusCode(500, new { message = "Failed to retrieve updated ticket" });
-                }
-
-                var ticketDto = MapToTicketResponseDto(fullTicket);
-                return Ok(ticketDto);
-            }
-            catch (ArgumentException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "An error occurred while updating the ticket status", error = ex.Message });
-            }
-        }
-
-        [HttpPut("{id}/assign")]
-        public async Task<ActionResult<TicketResponseDto>> AssignTicket(int id, [FromBody] int agentId, [FromQuery] int assignedByUserId = 1)
-        {
-            try
-            {
-                var updatedTicket = await _ticketService.AssignTicketAsync(id, agentId, assignedByUserId);
-                var fullTicket = await _ticketService.GetTicketAsync(updatedTicket.Id);
-                
-                if (fullTicket == null)
-                {
-                    return StatusCode(500, new { message = "Failed to retrieve updated ticket" });
-                }
-
-                var ticketDto = MapToTicketResponseDto(fullTicket);
-                return Ok(ticketDto);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "An error occurred while assigning the ticket", error = ex.Message });
-            }
-        }
-
-        [HttpPost("{id}/comments")]
-        public async Task<ActionResult<CommentDto>> AddComment(int id, AddCommentDto addCommentDto, [FromQuery] int userId = 1)
-        {
-            try
-            {
-                var comment = await _ticketService.AddCommentAsync(id, userId, addCommentDto.CommentText, addCommentDto.IsInternal);
-                
-                // Get the comment with user details
-                var commentWithUser = await _unitOfWork.TicketComments.FirstOrDefaultAsync(c => c.Id == comment.Id);
-                if (commentWithUser?.User == null)
-                {
-                    commentWithUser = comment;
-                    commentWithUser.User = await _unitOfWork.Users.GetByIdAsync(userId) ?? new User();
-                }
-
-                var commentDto = MapToCommentDto(commentWithUser);
-                return CreatedAtAction(nameof(GetTicket), new { id = id }, commentDto);
-            }
-            catch (ArgumentException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "An error occurred while adding the comment", error = ex.Message });
-            }
-        }
-
-        [HttpGet("{id}/suggest-agent")]
-        public async Task<ActionResult<UserDto>> SuggestBestAgent(int id)
-        {
-            try
-            {
-                var suggestedAgent = await _ticketService.SuggestBestAgentAsync(id);
-                if (suggestedAgent == null)
-                {
-                    return NotFound(new { message = "No suitable agent found" });
-                }
-
-                var agentDto = MapToUserDto(suggestedAgent);
-                return Ok(agentDto);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "An error occurred while suggesting an agent", error = ex.Message });
-            }
-        }
-
-        // Helper mapping methods
+        // Helper mapping methods with null safety
         private static TicketResponseDto MapToTicketResponseDto(Ticket ticket)
         {
             return new TicketResponseDto
@@ -229,7 +162,7 @@ namespace SupportTicketSystem.API.Controllers
                 ResolvedAt = ticket.ResolvedAt,
                 ClosedAt = ticket.ClosedAt,
                 DueDate = ticket.DueDate,
-                Customer = MapToUserDto(ticket.Customer),
+                Customer = ticket.Customer != null ? MapToUserDto(ticket.Customer) : new UserDto { Id = ticket.CustomerId, FullName = "Unknown" },
                 AssignedAgent = ticket.AssignedAgent != null ? MapToUserDto(ticket.AssignedAgent) : null,
                 Category = ticket.Category != null ? MapToCategoryDto(ticket.Category) : null,
                 Comments = ticket.Comments?.Select(MapToCommentDto).ToList() ?? new List<CommentDto>(),
@@ -242,9 +175,9 @@ namespace SupportTicketSystem.API.Controllers
             return new UserDto
             {
                 Id = user.Id,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
+                Email = user.Email ?? string.Empty,
+                FirstName = user.FirstName ?? string.Empty,
+                LastName = user.LastName ?? string.Empty,
                 FullName = user.FullName,
                 Role = user.Role,
                 IsActive = user.IsActive,
@@ -258,7 +191,7 @@ namespace SupportTicketSystem.API.Controllers
             return new CategoryDto
             {
                 Id = category.Id,
-                Name = category.Name,
+                Name = category.Name ?? string.Empty,
                 Description = category.Description,
                 ParentCategoryId = category.ParentCategoryId,
                 Level = category.Level,
@@ -272,10 +205,10 @@ namespace SupportTicketSystem.API.Controllers
             return new CommentDto
             {
                 Id = comment.Id,
-                CommentText = comment.CommentText,
+                CommentText = comment.CommentText ?? string.Empty,
                 IsInternal = comment.IsInternal,
                 CreatedAt = comment.CreatedAt,
-                User = MapToUserDto(comment.User)
+                User = comment.User != null ? MapToUserDto(comment.User) : new UserDto { Id = comment.UserId, FullName = "Unknown" }
             };
         }
 
@@ -284,12 +217,12 @@ namespace SupportTicketSystem.API.Controllers
             return new AttachmentDto
             {
                 Id = attachment.Id,
-                FileName = attachment.FileName,
-                OriginalFileName = attachment.OriginalFileName,
+                FileName = attachment.FileName ?? string.Empty,
+                OriginalFileName = attachment.OriginalFileName ?? string.Empty,
                 FileSize = attachment.FileSize,
-                MimeType = attachment.MimeType,
+                MimeType = attachment.MimeType ?? string.Empty,
                 CreatedAt = attachment.CreatedAt,
-                UploadedBy = MapToUserDto(attachment.UploadedBy)
+                UploadedBy = attachment.UploadedBy != null ? MapToUserDto(attachment.UploadedBy) : new UserDto { Id = attachment.UploadedById, FullName = "Unknown" }
             };
         }
     }

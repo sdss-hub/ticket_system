@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using SupportTicketSystem.Core.Interfaces;
 using SupportTicketSystem.Core.Services;
 using SupportTicketSystem.Infrastructure.Data;
@@ -25,6 +25,7 @@ namespace SupportTicketSystem.Infrastructure.Extensions
 
             // Services
             services.AddScoped<ITicketService, TicketService>();
+            services.AddScoped<IAuthService, AuthService>();
             services.AddHttpClient<IAIService, OpenAIService>();
 
             return services;
