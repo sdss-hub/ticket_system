@@ -33,8 +33,26 @@ namespace SupportTicketSystem.Core.Entities
         
         public string? AIAnalysis { get; set; }
         
+        public string? BusinessImpactData { get; set; }
+        
+        public string AssignmentMethod { get; set; } = "Auto"; // "AI", "Manual", "Fallback", "Queue", "Escalated"
+        public string? AssignmentReason { get; set; }
+        public DateTime? AssignedAt { get; set; }
+        public bool IsEscalated { get; set; } = false;
+        public string? EscalationReason { get; set; }
+        public int? EscalatedById { get; set; }
+        public DateTime? EscalatedAt { get; set; }
+        
+        public DateTime? FirstResponseDeadline { get; set; }
+        public DateTime? ResolutionDeadline { get; set; }
+        public DateTime? FirstResponseAt { get; set; }
+        
+        public int? CustomerSatisfactionScore { get; set; } // 1-5 rating
+        public string? CustomerFeedback { get; set; }
+        
         public virtual User Customer { get; set; } = null!;
         public virtual User? AssignedAgent { get; set; }
+        public virtual User? EscalatedBy { get; set; }
         public virtual Category? Category { get; set; }
         public virtual ICollection<TicketComment> Comments { get; set; } = new List<TicketComment>();
         public virtual ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();

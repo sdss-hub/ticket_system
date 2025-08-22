@@ -21,7 +21,7 @@ namespace SupportTicketSystem.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult> GetHealth()
+        public IActionResult GetHealth()  // Fixed: Removed async since no await
         {
             var healthStatus = new
             {
@@ -176,12 +176,13 @@ namespace SupportTicketSystem.API.Controllers
         {
             try
             {
+                // Fixed: Use parameterized query instead of string interpolation
                 var tableNames = new[] { "Users", "Tickets", "Categories", "TicketComments", "Attachments", "Tags", "Skills", "AIInsights" };
                 
                 foreach (var tableName in tableNames)
                 {
-                    var sql = $"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{tableName}';";
-                    var result = await _context.Database.ExecuteSqlRawAsync($"SELECT CASE WHEN EXISTS({sql}) THEN 1 ELSE 0 END");
+                    var sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name={0}";
+                    var result = await _context.Database.ExecuteSqlAsync($"SELECT CASE WHEN EXISTS(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name={tableName}) THEN 1 ELSE 0 END");
                 }
                 
                 return true;
