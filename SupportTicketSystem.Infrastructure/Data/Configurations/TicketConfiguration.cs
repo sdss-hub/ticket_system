@@ -32,7 +32,6 @@ namespace SupportTicketSystem.Infrastructure.Data.Configurations
             builder.Property(t => t.AIAnalysis)
                 .HasColumnType("JSON");
             
-            // Indexes
             builder.HasIndex(t => t.TicketNumber).IsUnique();
             builder.HasIndex(t => t.CustomerId);
             builder.HasIndex(t => t.AssignedAgentId);
@@ -40,7 +39,6 @@ namespace SupportTicketSystem.Infrastructure.Data.Configurations
             builder.HasIndex(t => t.Priority);
             builder.HasIndex(t => t.CreatedAt);
             
-            // Relationships
             builder.HasMany(t => t.Comments)
                 .WithOne(c => c.Ticket)
                 .HasForeignKey(c => c.TicketId)
