@@ -22,6 +22,7 @@ namespace SupportTicketSystem.Infrastructure.Data
         public DbSet<TicketHistory> TicketHistory { get; set; }
         public DbSet<AIInsight> AIInsights { get; set; }
         public DbSet<SystemConfiguration> SystemConfigurations { get; set; }
+    public DbSet<Feedback> Feedback { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

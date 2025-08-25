@@ -93,6 +93,9 @@ namespace SupportTicketSystem.API.DTOs
         
         // Assignment information
         public TicketAssignmentDto? Assignment { get; set; }
+        
+        // Customer feedback
+        public FeedbackDto? Feedback { get; set; }
     }
 
     public class AIAnalysisDto

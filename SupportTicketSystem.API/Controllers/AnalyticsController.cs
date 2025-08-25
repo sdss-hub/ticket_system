@@ -46,7 +46,7 @@ namespace SupportTicketSystem.API.Controllers
                     TicketsByCategory = await _context.Tickets
                         .Include(t => t.Category)
                         .Where(t => t.Category != null)
-                        .GroupBy(t => t.Category.Name)
+                        .GroupBy(t => t.Category!.Name)  // Fixed: Added null-forgiving operator
                         .Select(g => new { Category = g.Key, Count = g.Count() })
                         .OrderByDescending(x => x.Count)
                         .Take(5)
@@ -81,7 +81,7 @@ namespace SupportTicketSystem.API.Controllers
                 var agents = await _context.Users
                     .Where(u => u.Role == UserRole.Agent)
                     .Include(u => u.AgentSkills)
-                        .ThenInclude(as_ => as_.Skill)
+                        .ThenInclude(ass => ass.Skill)  // Fixed: Changed from 'as_' to 'ass' to avoid keyword conflict
                     .ToListAsync();
 
                 var agentPerformance = new List<object>();
@@ -101,10 +101,10 @@ namespace SupportTicketSystem.API.Controllers
                         .Where(t => t.ResolvedAt.HasValue && t.ResolvedAt.Value.Month == DateTime.UtcNow.Month)
                         .ToList();
 
-                    // Calculate average resolution time
+                    // Calculate average resolution time - Fixed null handling
                     var avgResolutionHours = resolvedTickets
                         .Where(t => t.ResolvedAt.HasValue)
-                        .Select(t => (t.ResolvedAt.Value - t.CreatedAt).TotalHours)
+                        .Select(t => (t.ResolvedAt!.Value - t.CreatedAt).TotalHours)
                         .DefaultIfEmpty(0)
                         .Average();
 
@@ -129,9 +129,9 @@ namespace SupportTicketSystem.API.Controllers
 
                         // Performance Metrics
                         AvgResolutionTimeHours = Math.Round(avgResolutionHours, 2),
-                        CustomerSatisfactionScore = sentimentScores.Any() ? Math.Round(sentimentScores.Average(), 2) : 0.5,
+                        CustomerSatisfactionScore = sentimentScores.Count != 0 ? Math.Round(sentimentScores.Average(), 2) : 0.5,
 
-                        LastActivity = agent.LastLoginAt,
+                        LastActivity = agent.LastLoginAt ?? DateTime.MinValue,  // Fixed: Handle nullable LastLoginAt
                         IsActive = agent.IsActive
                     };
 
@@ -166,13 +166,13 @@ namespace SupportTicketSystem.API.Controllers
 
                     var mostUsedCategories = customerTickets
                         .Where(t => t.Category != null)
-                        .GroupBy(t => t.Category.Name)
+                        .GroupBy(t => t.Category!.Name)  // Fixed: Added null-forgiving operator
                         .OrderByDescending(g => g.Count())
                         .Take(3)
                         .Select(g => new { Category = g.Key, Count = g.Count() })
                         .ToList();
 
-                    var avgPriority = customerTickets.Any() 
+                    var avgPriority = customerTickets.Count != 0 
                         ? customerTickets.Select(t => (int)t.Priority).Average()
                         : 2.0;
 
@@ -200,10 +200,10 @@ namespace SupportTicketSystem.API.Controllers
                         // Behavior Analysis
                         MostUsedCategories = mostUsedCategories,
                         AvgPriorityLevel = Math.Round(avgPriority, 2),
-                        LastTicketDate = lastTicketDate,
+                        LastTicketDate = lastTicketDate ?? DateTime.MinValue,  // Fixed: Handle nullable
 
                         // Satisfaction Metrics
-                        OverallSentiment = sentimentScores.Any() ? Math.Round(sentimentScores.Average(), 2) : 0.5,
+                        OverallSentiment = sentimentScores.Count != 0 ? Math.Round(sentimentScores.Average(), 2) : 0.5,
                         JoinDate = customer.CreatedAt
                     };
 
@@ -229,18 +229,28 @@ namespace SupportTicketSystem.API.Controllers
             foreach (var agent in agents)
             {
                 var assignedCount = await _context.Tickets
-                    .CountAsync(t => t.AssignedAgentId == agent.Id && t.Status != TicketStatus.Closed);
+                    .CountAsync(t => t.AssignedAgentId == agent.Id && 
+                                   (t.Status == TicketStatus.New || t.Status == TicketStatus.InProgress));
 
-                var resolvedThisWeek = await _context.Tickets
+                var completedThisWeek = await _context.Tickets
                     .CountAsync(t => t.AssignedAgentId == agent.Id && 
                                    t.ResolvedAt.HasValue && 
                                    t.ResolvedAt.Value >= DateTime.UtcNow.AddDays(-7));
 
                 workload.Add(new
                 {
+                    AgentId = agent.Id,
                     AgentName = agent.FullName,
-                    AssignedTickets = assignedCount,
-                    ResolvedThisWeek = resolvedThisWeek
+                    CurrentWorkload = assignedCount,
+                    CompletedThisWeek = completedThisWeek,
+                    CapacityStatus = assignedCount switch
+                    {
+                        >= 20 => "Overloaded",
+                        >= 15 => "High",
+                        >= 10 => "Normal",
+                        >= 5 => "Light",
+                        _ => "Available"
+                    }
                 });
             }
 
@@ -251,21 +261,25 @@ namespace SupportTicketSystem.API.Controllers
         {
             var last7Days = Enumerable.Range(0, 7)
                 .Select(i => DateTime.UtcNow.Date.AddDays(-i))
-                .Reverse()
+                .OrderBy(date => date)
                 .ToList();
 
             var trends = new List<object>();
-            
+
             foreach (var date in last7Days)
             {
-                var dayStats = new
+                var created = await _context.Tickets
+                    .CountAsync(t => t.CreatedAt.Date == date);
+
+                var resolved = await _context.Tickets
+                    .CountAsync(t => t.ResolvedAt.HasValue && t.ResolvedAt.Value.Date == date);
+
+                trends.Add(new
                 {
-                    Date = date,
-                    Created = await _context.Tickets.CountAsync(t => t.CreatedAt.Date == date),
-                    Resolved = await _context.Tickets.CountAsync(t => t.ResolvedAt.HasValue && t.ResolvedAt.Value.Date == date),
-                    InProgress = await _context.Tickets.CountAsync(t => t.UpdatedAt.Date == date && t.Status == TicketStatus.InProgress)
-                };
-                trends.Add(dayStats);
+                    Date = date.ToString("yyyy-MM-dd"),
+                    Created = created,
+                    Resolved = resolved
+                });
             }
 
             return trends;

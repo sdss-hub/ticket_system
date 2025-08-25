@@ -1,0 +1,32 @@
+
+services:
+  support-ticket-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: support-ticket-backend
+    ports:
+      - "5104:5104"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5104
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/supporttickets.db
+      - JWT__Key=YourSuperSecretJWTKeyForDevelopment123456
+      - JWT__Issuer=SupportTicketSystem
+      - JWT__Audience=SupportTicketUsers
+      - JWT__ExpiryInMinutes=1440
+      - OpenAI__ApiKey=demo-key
+      - OpenAI__Model=gpt-3.5-turbo
+    volumes:
+      - ticket_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5104/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  ticket_data:
+    driver: local

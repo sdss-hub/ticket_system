@@ -193,11 +193,12 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
             return SuggestAgentOffline(ticketContent, availableAgents);
         }
 
-        public async Task<AIInsight> CreateInsightAsync(int ticketId, string insightType, object data, double confidence)
+        // Fixed: Removed async and just return Task.FromResult
+        public Task<AIInsight> CreateInsightAsync(int ticketId, string insightType, object data, double confidence)
         {
             var insightTypeEnum = Enum.Parse<InsightType>(insightType, true);
             
-            return new AIInsight
+            var insight = new AIInsight
             {
                 TicketId = ticketId,
                 InsightType = insightTypeEnum,
@@ -205,10 +206,12 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
                 Data = JsonSerializer.Serialize(data),
                 CreatedAt = DateTime.UtcNow
             };
+
+            return Task.FromResult(insight);
         }
 
         // Business impact analysis
-        private int AnalyzeBusinessImpact(BusinessImpact? businessImpact)
+        private static int AnalyzeBusinessImpact(BusinessImpact? businessImpact)
         {
             if (businessImpact == null)
                 return 2; // Default medium priority
@@ -245,7 +248,7 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
         }
 
         // Offline fallback methods for when OpenAI is not available
-        private string AnalyzeCategoryOffline(string title, string description)
+        private static string AnalyzeCategoryOffline(string title, string description)
         {
             var content = (title + " " + description).ToLower();
             
@@ -267,7 +270,7 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
             return "General Inquiry";
         }
 
-        private int AnalyzePriorityOffline(string title, string description)
+        private static int AnalyzePriorityOffline(string title, string description)
         {
             var content = (title + " " + description).ToLower();
             
@@ -289,7 +292,7 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
             return 2; // Default medium
         }
 
-        private double AnalyzeSentimentOffline(string text)
+        private static double AnalyzeSentimentOffline(string text)
         {
             var content = text.ToLower();
             double score = 0.5; // Start neutral
@@ -314,7 +317,7 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
             return Math.Max(0.0, Math.Min(1.0, score));
         }
 
-        private string GenerateResponseOffline(string ticketContent, string customerMessage, bool isInternal)
+        private static string GenerateResponseOffline(string ticketContent, string customerMessage, bool isInternal)
         {
             if (isInternal)
             {
@@ -324,7 +327,7 @@ Return only the agent number (1, 2, 3, etc.), nothing else.";
             return "Thank you for contacting us. I understand your concern and I'm here to help resolve this issue for you. Let me look into this right away and get back to you with a solution. I'll update you within the next hour on our progress.";
         }
 
-        private int SuggestAgentOffline(string ticketContent, IEnumerable<User> availableAgents)
+        private static int SuggestAgentOffline(string ticketContent, IEnumerable<User> availableAgents)
         {
             // Simple fallback: assign to agent with lowest workload
             return availableAgents

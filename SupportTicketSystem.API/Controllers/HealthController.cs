@@ -21,7 +21,7 @@ namespace SupportTicketSystem.API.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetHealth()  // Fixed: Removed async since no await
+        public IActionResult GetHealth()
         {
             var healthStatus = new
             {
@@ -176,13 +176,43 @@ namespace SupportTicketSystem.API.Controllers
         {
             try
             {
-                // Fixed: Use parameterized query instead of string interpolation
+                // Fixed: Use safe table existence check without SQL injection risk
                 var tableNames = new[] { "Users", "Tickets", "Categories", "TicketComments", "Attachments", "Tags", "Skills", "AIInsights" };
                 
                 foreach (var tableName in tableNames)
                 {
-                    var sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name={0}";
-                    var result = await _context.Database.ExecuteSqlAsync($"SELECT CASE WHEN EXISTS(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name={tableName}) THEN 1 ELSE 0 END");
+                    // Safe approach: Use parameterized query with ExecuteSqlAsync
+                    var result = await _context.Database
+                        .ExecuteSqlAsync($"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name={tableName}");
+                    
+                    // Alternative: Just try to query the actual tables safely
+                    switch (tableName)
+                    {
+                        case "Users":
+                            await _context.Users.Take(1).CountAsync();
+                            break;
+                        case "Tickets":
+                            await _context.Tickets.Take(1).CountAsync();
+                            break;
+                        case "Categories":
+                            await _context.Categories.Take(1).CountAsync();
+                            break;
+                        case "TicketComments":
+                            await _context.TicketComments.Take(1).CountAsync();
+                            break;
+                        case "Attachments":
+                            await _context.Attachments.Take(1).CountAsync();
+                            break;
+                        case "Tags":
+                            await _context.Tags.Take(1).CountAsync();
+                            break;
+                        case "Skills":
+                            await _context.Skills.Take(1).CountAsync();
+                            break;
+                        case "AIInsights":
+                            await _context.AIInsights.Take(1).CountAsync();
+                            break;
+                    }
                 }
                 
                 return true;
@@ -231,7 +261,7 @@ namespace SupportTicketSystem.API.Controllers
             try
             {
                 // Test many-to-many relationships
-                var agentSkills = await _context.AgentSkills.Include(as_ => as_.Agent).Include(as_ => as_.Skill).ToListAsync();
+                var agentSkills = await _context.AgentSkills.Include(ass => ass.Agent).Include(ass => ass.Skill).ToListAsync();
                 var ticketTags = await _context.TicketTags.Include(tt => tt.Ticket).Include(tt => tt.Tag).ToListAsync();
                 
                 // Test hierarchical relationships
@@ -271,7 +301,7 @@ namespace SupportTicketSystem.API.Controllers
             try
             {
                 // Check if BLOB column structure exists (even if no binary data yet)
-                var attachmentTableExists = await _context.Attachments.AnyAsync();
+                await _context.Attachments.Take(1).CountAsync();
                 return true; // BLOB column exists in schema
             }
             catch
